@@ -1,34 +1,35 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from dotenv import load_dotenv
 import os
 
 # Load environment variables from .env
 load_dotenv()
 
-# Database URL from .env
-DATABASE_URL = os.getenv("postgresql://postgres:Anita4952@localhost:5432/Banking_DB")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL is not set in .env file")
 
-# Create SQLAlchemy engine
+# SQLAlchemy Engine
 engine = create_engine(
     DATABASE_URL,
-    echo=True  # set False in production
+    echo=True,          # shows SQL logs (good for development)
+    future=True
 )
 
-# Create session
+# Session factory
 SessionLocal = sessionmaker(
-    autocommit=False,
+    bind=engine,
     autoflush=False,
-    bind=engine
+    autocommit=False
 )
 
 # Base class for models
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
-# Dependency for FastAPI routes
+# Dependency for DB session (used in routes)
 def get_db():
     db = SessionLocal()
     try:
