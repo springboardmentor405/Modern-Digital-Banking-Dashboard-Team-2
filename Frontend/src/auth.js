@@ -1,40 +1,64 @@
-
-const API_BASE = "/api"; 
-const USE_MOCK = true;   
+// ===============================
+// CONFIG
+// ===============================
+const API_BASE = "http://127.0.0.1:8000/auth";
+const USE_MOCK = false;   // 🔴 MUST be false for backend integration
 
 const TOKEN_KEY = "id_token";
 const USER_KEY = "currentUser";
 
-export function storeToken(token) { localStorage.setItem(TOKEN_KEY, token); }
-export function removeToken() { localStorage.removeItem(TOKEN_KEY); }
-export function getToken() { return localStorage.getItem(TOKEN_KEY); }
-export function storeUser(user) { localStorage.setItem(USER_KEY, JSON.stringify(user)); }
-export function removeUser() { localStorage.removeItem(USER_KEY); }
+// ===============================
+// TOKEN & USER STORAGE
+// ===============================
+export function storeToken(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function removeToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function storeUser(user) {
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+export function removeUser() {
+  localStorage.removeItem(USER_KEY);
+}
+
 export function getUser() {
   const raw = localStorage.getItem(USER_KEY);
   return raw ? JSON.parse(raw) : null;
 }
 
-
+// ===============================
+// JWT HELPERS
+// ===============================
 export function parseJwt(token) {
   if (!token) return null;
   try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
     return JSON.parse(jsonPayload);
-  } catch (e) {
+  } catch {
     return null;
   }
 }
 
 export function isTokenExpired(token) {
-  const p = parseJwt(token);
-  if (!p || !p.exp) return true;
-  return p.exp <= Math.floor(Date.now() / 1000);
+  const payload = parseJwt(token);
+  if (!payload || !payload.exp) return true;
+  return payload.exp <= Math.floor(Date.now() / 1000);
 }
 
 export function isAuthenticated() {
@@ -52,59 +76,71 @@ export function authHeader() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-
-function makeFakeJwt(payload = {}, expiresInSeconds = 3600) {
-  const header = { alg: "none", typ: "JWT" };
-  const now = Math.floor(Date.now() / 1000);
-  const full = { ...payload, iat: now, exp: now + expiresInSeconds };
-  
-  const b64 = (u) => btoa(JSON.stringify(u))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    
-  return `${b64(header)}.${b64(full)}.`; 
-}
-
-
+// ===============================
+// AUTH APIs
+// ===============================
 export async function signup({ name, email, password }) {
   if (USE_MOCK) {
-    const existing = JSON.parse(localStorage.getItem("mockUser") || "null");
-    if (existing && existing.email === email) throw new Error("Email already registered");
-    
-    localStorage.setItem("mockUser", JSON.stringify({ name, email, password }));
-    return { user: { name, email } };
-  } else {
-    const res = await fetch(`${API_BASE}/signup`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
-    });
-    if (!res.ok) throw new Error(await res.text() || "Signup failed");
-    return await res.json();
+    throw new Error("Mock mode disabled");
   }
+
+  const res = await fetch(`${API_BASE}/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email, password }),
+  });
+
+  if (!res.ok) {
+    throw new Error("Signup failed");
+  }
+
+  return await res.json();
 }
 
 export async function login({ email, password }) {
   if (USE_MOCK) {
-    const mock = JSON.parse(localStorage.getItem("mockUser") || "null");
-    if (!mock || mock.email !== email || mock.password !== password) {
-      throw new Error("Invalid credentials or user not found.");
-    }
-    const token = makeFakeJwt({ email, name: mock.name }, 86400);
-    storeToken(token);
-    storeUser({ email: mock.email, name: mock.name });
-    return { token, user: { email: mock.email, name: mock.name } };
-  } else {
-    const res = await fetch(`${API_BASE}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) throw new Error(await res.text() || "Login failed");
-    const data = await res.json();
-    if (data.token) {
-      storeToken(data.token);
-      storeUser(data.user || { email });
-    }
-    return data;
+    throw new Error("Mock mode disabled");
   }
+
+  // 🔑 FastAPI login expects query params
+  const res = await fetch(
+    `${API_BASE}/login?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`,
+    { method: "POST" }
+  );
+
+  if (!res.ok) {
+    throw new Error("Invalid email or password");
+  }
+
+  const data = await res.json();
+
+  // 🔑 Backend returns: { access_token, token_type }
+  storeToken(data.access_token);
+
+  // Optional: store basic user info from token
+  const payload = parseJwt(data.access_token);
+  if (payload?.sub) {
+    storeUser({ email: payload.sub });
+  }
+
+  return data;
+}
+
+// ===============================
+// CURRENT USER (OPTIONAL)
+// ===============================
+export async function getCurrentUser() {
+  const token = getToken();
+  if (!token) return null;
+
+  const res = await fetch(`${API_BASE}/me`, {
+    headers: authHeader(),
+  });
+
+  if (!res.ok) {
+    logout();
+    return null;
+  }
+
+  return await res.json();
 }
