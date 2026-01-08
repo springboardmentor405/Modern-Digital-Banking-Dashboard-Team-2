@@ -1,124 +1,203 @@
-import React from "react";
-import { useNavigate } from "react-router-dom";
-import { getUser, logout } from "../auth";
+import React, { useState, useEffect } from "react";
+
+import {
+  Eye,
+  EyeOff,
+  DollarSign,
+  TrendingUp,
+  TrendingDown,
+  PiggyBank,
+  Gift,
+} from "lucide-react";
+
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+} from "recharts";
+
+import { fetchRewards } from "../services/rewards";
+import { fetchCurrencySummary } from "../services/currency";
+
+/* ---------- DATA ---------- */
+const expenseTrendData = [
+  { week: "Week 1", amount: 2800 },
+  { week: "Week 2", amount: 3200 },
+  { week: "Week 3", amount: 2900 },
+  { week: "Week 4", amount: 3450 },
+];
+
+const categoryData = [
+  { name: "Food", value: 1200 },
+  { name: "Transport", value: 650 },
+  { name: "Shopping", value: 1050 },
+  { name: "Uncategorized", value: 519 },
+];
+
+const COLORS = ["#FB923C", "#3B82F6", "#A855F7", "#EF4444"];
 
 export default function Overview() {
-  const navigate = useNavigate();
+  const [showBalance, setShowBalance] = useState(false);
+  const [showIncome, setShowIncome] = useState(false);
+  const [rewards, setRewards] = useState(0);
+  const [currency, setCurrency] = useState(null);
 
-  // 🔐 Safe user handling
-  const user = getUser() || {};
-  const displayName = user.name || user.email || "User";
+  /* ---------- FETCH REWARDS ---------- */
+  useEffect(() => {
+    fetchRewards()
+      .then((data) => setRewards(data.points))
+      .catch(() => setRewards(0));
+  }, []);
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };
+  /* ---------- FETCH CURRENCY ---------- */
+  useEffect(() => {
+    fetchCurrencySummary()
+      .then(setCurrency)
+      .catch(() => setCurrency(null));
+  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Navigation */}
-      <nav className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-linear-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center text-white font-bold">
-            B
-          </div>
-          <span className="text-xl font-bold bg-linear-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-            NeoBank
-          </span>
+    <div className="space-y-6">
+      {/* STAT CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
+        <StatCard
+          title="Total Balance"
+          value={showBalance ? "₹24,560" : "••••••"}
+          subtitle="Current balance"
+          icon={
+            <div className="flex gap-2">
+              <button onClick={() => setShowBalance(!showBalance)}>
+                {showBalance ? <EyeOff /> : <Eye />}
+              </button>
+              <DollarSign className="text-blue-600" />
+            </div>
+          }
+        />
+
+        <StatCard
+          title="Total Income"
+          value={showIncome ? "₹18,000" : "••••••"}
+          subtitle="This month"
+          icon={
+            <div className="flex gap-2">
+              <button onClick={() => setShowIncome(!showIncome)}>
+                {showIncome ? <EyeOff /> : <Eye />}
+              </button>
+              <TrendingUp className="text-green-600" />
+            </div>
+          }
+        />
+
+        <StatCard
+          title="Total Expenses"
+          value="₹3,419"
+          subtitle="This month"
+          valueColor="text-red-500"
+          icon={<TrendingDown className="text-red-600" />}
+        />
+
+        <StatCard
+          title="Savings"
+          value="₹14,581"
+          subtitle="This month"
+          valueColor="text-purple-600"
+          icon={<PiggyBank className="text-purple-600" />}
+        />
+
+        {/* 🎁 REWARD POINTS CARD */}
+        <StatCard
+          title="Reward Points"
+          value={rewards}
+          subtitle="Earned from bill payments"
+          valueColor="text-purple-700"
+          icon={<Gift className="text-purple-600" />}
+        />
+
+        {/* 💱 CURRENCY SUMMARY CARD */}
+        {currency && (
+          <StatCard
+            title="Currency Summary"
+            value={`1 INR = $${currency.rates.USD} / €${currency.rates.EUR}`}
+            subtitle="Live exchange rate"
+            valueColor="text-blue-700"
+            icon={<DollarSign className="text-blue-600" />}
+          />
+        )}
+      </div>
+
+      {/* CHARTS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h2 className="font-semibold mb-4">Monthly Expense Trend</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={expenseTrendData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="week" />
+              <YAxis />
+              <Tooltip />
+              <Line
+                type="monotone"
+                dataKey="amount"
+                stroke="#3B82F6"
+                strokeWidth={3}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
 
-        <div className="flex items-center gap-4">
-          <span className="text-slate-600 hidden sm:block">
-            Welcome, <strong>{displayName}</strong>
-          </span>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-          >
-            Logout
-          </button>
-        </div>
-      </nav>
-
-      {/* Dashboard Main View */}
-      <main className="p-6 max-w-7xl mx-auto w-full space-y-6">
-        <header>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Account Dashboard
-          </h1>
-          <p className="text-slate-500">
-            Monitor your activities and balance
-          </p>
-        </header>
-
-        {/* Financial Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <p className="text-sm text-slate-500 mb-1">Total Balance</p>
-            <h3 className="text-3xl font-bold text-slate-900">$24,560.00</h3>
-            <div className="mt-2 text-xs text-green-600 font-medium">
-              +2.5% from last month
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <p className="text-sm text-slate-500 mb-1">Monthly Spending</p>
-            <h3 className="text-3xl font-bold text-slate-900">$3,240.50</h3>
-            <div className="mt-2 text-xs text-slate-400">
-              On track for budget
-            </div>
-          </div>
-
-          <div className="bg-linear-to-r from-indigo-600 to-purple-700 p-6 rounded-2xl shadow-lg text-white">
-            <p className="text-sm opacity-80 mb-1">Savings Goal</p>
-            <h3 className="text-3xl font-bold">$50,000.00</h3>
-            <div className="mt-4 w-full bg-white/20 rounded-full h-2">
-              <div
-                className="bg-white h-full rounded-full"
-                style={{ width: "48%" }}
-              ></div>
-            </div>
-            <p className="mt-2 text-xs opacity-80">48% complete</p>
-          </div>
-        </div>
-
-        {/* Transactions */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <h4 className="font-semibold mb-4 text-slate-800">
-            Recent Transactions
-          </h4>
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between py-3 border-b border-slate-50 last:border-0"
+        <div className="bg-white p-6 rounded-xl shadow-sm">
+          <h2 className="font-semibold mb-4">
+            Category-wise Spending Summary
+          </h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={categoryData}
+                innerRadius={70}
+                outerRadius={110}
+                paddingAngle={5}
+                dataKey="value"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400">
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M12 1v22m11-11H1" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">
-                      Payment to Vendor {i}
-                    </p>
-                    <p className="text-xs text-slate-400">Dec 07, 2025</p>
-                  </div>
-                </div>
-                <span className="font-semibold text-red-500">-$45.00</span>
-              </div>
-            ))}
-          </div>
+                {categoryData.map((_, i) => (
+                  <Cell key={i} fill={COLORS[i]} />
+                ))}
+              </Pie>
+              <Legend />
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
         </div>
-      </main>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- CARD ---------- */
+function StatCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  valueColor = "text-gray-900",
+}) {
+  return (
+    <div className="bg-white p-5 rounded-xl shadow-sm">
+      <div className="flex justify-between items-center">
+        <h3 className="text-sm text-gray-600">{title}</h3>
+        {icon}
+      </div>
+      <div className={`text-2xl font-bold mt-3 ${valueColor}`}>
+        {value}
+      </div>
+      <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
     </div>
   );
 }

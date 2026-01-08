@@ -1,7 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.api import transactions
 from app.api import auth, accounts
+from app.api import budgets
+from app.api import bills
+from app.routers import bills
+from app.routers import bills, rewards
+from app.routers import currency
+
 
 app = FastAPI()
 
@@ -20,6 +26,12 @@ app.add_middleware(
 # ✅ Routers
 app.include_router(auth.router)
 app.include_router(accounts.router)
+app.include_router(transactions.router)
+app.include_router(budgets.router)
+app.include_router(bills.router)
+app.include_router(rewards.router)
+app.include_router(currency.router)
+
 
 # ✅ Health check
 @app.get("/")
