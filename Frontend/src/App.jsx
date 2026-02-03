@@ -7,6 +7,8 @@ import Budgets from "./pages/Budgets";
 import DashboardLayout from "./layouts/DashboardLayout";
 import { isAuthenticated } from "./auth";
 import Bills from "./pages/Bills";
+import Insights from "./pages/Insights";
+import Profile from "./pages/Profile";
 
 function PrivateRoute({ children }) {
   return isAuthenticated() ? children : <Navigate to="/login" replace />;
@@ -38,6 +40,10 @@ export default function App() {
           <Route path="budgets" element={<Budgets />} />
 
            <Route path="bills" element={<Bills />} />
+
+           <Route path="/insights" element={<Insights />} />
+
+           <Route path="/profile" element={<Profile />} />
         </Route>
 
         {/* Fallback */}

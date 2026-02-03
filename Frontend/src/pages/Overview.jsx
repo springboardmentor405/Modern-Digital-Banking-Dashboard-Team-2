@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import axios from "axios";
 
 import {
   Eye,
@@ -27,28 +28,29 @@ import {
 import { fetchRewards } from "../services/rewards";
 import { fetchCurrencySummary } from "../services/currency";
 
-/* ---------- DATA ---------- */
-const expenseTrendData = [
-  { week: "Week 1", amount: 2800 },
-  { week: "Week 2", amount: 3200 },
-  { week: "Week 3", amount: 2900 },
-  { week: "Week 4", amount: 3450 },
-];
-
-const categoryData = [
-  { name: "Food", value: 1200 },
-  { name: "Transport", value: 650 },
-  { name: "Shopping", value: 1050 },
-  { name: "Uncategorized", value: 519 },
-];
-
-const COLORS = ["#FB923C", "#3B82F6", "#A855F7", "#EF4444"];
+/* ---------- CONSTANTS ---------- */
+const COLORS = ["#FB923C", "#3B82F6", "#A855F7", "#EF4444", "#1f9649"];
+const API_BASE = "http://localhost:8000/insights";
 
 export default function Overview() {
   const [showBalance, setShowBalance] = useState(false);
   const [showIncome, setShowIncome] = useState(false);
+
+  const [summary, setSummary] = useState(null);
   const [rewards, setRewards] = useState(0);
   const [currency, setCurrency] = useState(null);
+
+  // ✅ REAL CHART DATA
+  const [expenseTrend, setExpenseTrend] = useState([]);
+  const [categorySpending, setCategorySpending] = useState([]);
+
+  /* ---------- FETCH SUMMARY ---------- */
+  useEffect(() => {
+    axios
+      .get(`${API_BASE}/summary`)
+      .then((res) => setSummary(res.data))
+      .catch(() => setSummary(null));
+  }, []);
 
   /* ---------- FETCH REWARDS ---------- */
   useEffect(() => {
@@ -64,14 +66,31 @@ export default function Overview() {
       .catch(() => setCurrency(null));
   }, []);
 
+  /* ---------- FETCH DASHBOARD CHART DATA ---------- */
+  useEffect(() => {
+    axios
+      .get(`${API_BASE}/dashboard/expense-trend`)
+      .then((res) => setExpenseTrend(res.data))
+      .catch(() => setExpenseTrend([]));
+
+    axios
+      .get(`${API_BASE}/dashboard/category-spending`)
+      .then((res) => setCategorySpending(res.data))
+      .catch(() => setCategorySpending([]));
+  }, []);
+
+  const totalIncome = summary?.total_income || 0;
+  const totalExpense = summary?.total_expense || 0;
+  const savings = totalIncome - totalExpense;
+
   return (
     <div className="space-y-6">
-      {/* STAT CARDS */}
+      {/* ---------- STAT CARDS ---------- */}
       <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
         <StatCard
           title="Total Balance"
-          value={showBalance ? "₹24,560" : "••••••"}
-          subtitle="Current balance"
+          value={showBalance ? `₹${savings}` : "••••••"}
+          subtitle="Available balance"
           icon={
             <div className="flex gap-2">
               <button onClick={() => setShowBalance(!showBalance)}>
@@ -84,7 +103,7 @@ export default function Overview() {
 
         <StatCard
           title="Total Income"
-          value={showIncome ? "₹18,000" : "••••••"}
+          value={showIncome ? `₹${totalIncome}` : "••••••"}
           subtitle="This month"
           icon={
             <div className="flex gap-2">
@@ -98,7 +117,7 @@ export default function Overview() {
 
         <StatCard
           title="Total Expenses"
-          value="₹3,419"
+          value={`₹${totalExpense}`}
           subtitle="This month"
           valueColor="text-red-500"
           icon={<TrendingDown className="text-red-600" />}
@@ -106,13 +125,12 @@ export default function Overview() {
 
         <StatCard
           title="Savings"
-          value="₹14,581"
+          value={`₹${savings}`}
           subtitle="This month"
           valueColor="text-purple-600"
           icon={<PiggyBank className="text-purple-600" />}
         />
 
-        {/* 🎁 REWARD POINTS CARD */}
         <StatCard
           title="Reward Points"
           value={rewards}
@@ -121,7 +139,6 @@ export default function Overview() {
           icon={<Gift className="text-purple-600" />}
         />
 
-        {/* 💱 CURRENCY SUMMARY CARD */}
         {currency && (
           <StatCard
             title="Currency Summary"
@@ -133,54 +150,73 @@ export default function Overview() {
         )}
       </div>
 
-      {/* CHARTS */}
+      {/* ---------- CHARTS (REAL DATA) ---------- */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* 🔹 Monthly Expense Trend */}
         <div className="bg-white p-6 rounded-xl shadow-sm">
           <h2 className="font-semibold mb-4">Monthly Expense Trend</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={expenseTrendData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="week" />
-              <YAxis />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="amount"
-                stroke="#3B82F6"
-                strokeWidth={3}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+
+          {expenseTrend.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={expenseTrend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="week" />
+                <YAxis />
+                <Tooltip />
+                <Line
+                  type="monotone"
+                  dataKey="amount"
+                  stroke="#3B82F6"
+                  strokeWidth={3}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-gray-400">
+              No expense data available
+            </div>
+          )}
         </div>
 
+        {/* 🔹 Category-wise Spending */}
         <div className="bg-white p-6 rounded-xl shadow-sm">
           <h2 className="font-semibold mb-4">
             Category-wise Spending Summary
           </h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={categoryData}
-                innerRadius={70}
-                outerRadius={110}
-                paddingAngle={5}
-                dataKey="value"
-              >
-                {categoryData.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i]} />
-                ))}
-              </Pie>
-              <Legend />
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+
+          {categorySpending.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={categorySpending}
+                  innerRadius={70}
+                  outerRadius={110}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {categorySpending.map((_, i) => (
+                    <Cell
+                      key={i}
+                      fill={COLORS[i % COLORS.length]}
+                    />
+                  ))}
+                </Pie>
+                <Legend />
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-gray-400">
+              No category data available
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-/* ---------- CARD ---------- */
+/* ---------- STAT CARD ---------- */
 function StatCard({
   title,
   value,

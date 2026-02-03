@@ -10,6 +10,11 @@ import {
 } from "lucide-react";
 import { toast } from "react-toastify";
 
+/* Rewards + Transactions */
+import { addRewardPoints } from "../services/rewards";
+import { addTransaction } from "../services/transactions";
+
+/* Bills API */
 import {
   fetchBills,
   createBill,
@@ -18,24 +23,18 @@ import {
   updateBill,
 } from "../services/bills";
 
+/* MUI */
+import { DataGrid } from "@mui/x-data-grid";
+import { Chip, Stack } from "@mui/material";
+
 /* ---------------- CONSTANTS ---------------- */
 const categories = ["Utilities", "Subscriptions", "Rent", "Internet"];
 const frequencies = ["Monthly", "Yearly", "One-time"];
 
-/* ---------------- DATE NORMALIZER (KEY FIX) ---------------- */
+/* ---------------- DATE NORMALIZER ---------------- */
 const normalizeDate = (dateStr) => {
-  // Already correct format
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return dateStr;
-  }
-
-  // Convert DD-MM-YYYY → YYYY-MM-DD
-  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
-    const [dd, mm, yyyy] = dateStr.split("-");
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  return dateStr;
+  if (!dateStr) return "";
+  return dateStr.includes("T") ? dateStr.split("T")[0] : dateStr;
 };
 
 export default function Bills() {
@@ -43,6 +42,7 @@ export default function Bills() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingBillId, setEditingBillId] = useState(null);
+  const [activeFilter, setActiveFilter] = useState("Upcoming");
 
   const [form, setForm] = useState({
     title: "",
@@ -53,12 +53,12 @@ export default function Bills() {
     reminder: true,
   });
 
-  /* ---------------- LOAD BILLS ---------------- */
+  /* ---------------- LOAD ---------------- */
   const loadBills = async () => {
     try {
       setLoading(true);
       const data = await fetchBills();
-      setBills(data);
+      setBills(data.map((b, i) => ({ ...b, id: b.id ?? i + 1 })));
     } catch {
       toast.error("Failed to load bills");
     } finally {
@@ -70,59 +70,40 @@ export default function Bills() {
     loadBills();
   }, []);
 
-  /* ---------------- CREATE / UPDATE ---------------- */
-  const handleSave = async () => {
-    if (!form.title || !form.amount || !form.due_date) {
-      toast.warning("Please fill all required fields");
-      return;
-    }
-
-    const payload = {
-      ...form,
-      amount: Number(form.amount),
-      due_date: normalizeDate(form.due_date),
-    };
-
-    try {
-      if (editingBillId) {
-        await updateBill(editingBillId, payload);
-        toast.success("Bill updated successfully");
-      } else {
-        await createBill(payload);
-        toast.success("Bill added successfully");
-      }
-
-      closeModal();
-      loadBills();
-    } catch (err) {
-      console.error("BILL SAVE ERROR:", err.response?.data || err);
-      toast.error("Operation failed");
-    }
+  /* ---------------- STATUS ---------------- */
+  const getStatus = (bill) => {
+    if (bill.is_paid) return "Paid";
+    return new Date(bill.due_date) < new Date() ? "Overdue" : "Upcoming";
   };
 
-  /* ---------------- EDIT ---------------- */
-  const handleEdit = (bill) => {
-    setEditingBillId(bill.id);
-    setForm({
-      title: bill.title,
-      amount: bill.amount,
-      due_date: bill.due_date.includes("T")
-        ? bill.due_date.split("T")[0]
-        : bill.due_date,
-      category: bill.category,
-      frequency: bill.frequency,
-      reminder: bill.reminder,
-    });
-    setShowModal(true);
-  };
+  /* ---------------- FILTER ---------------- */
+  const filteredBills = bills.filter((bill) => {
+    const status = getStatus(bill);
+    if (activeFilter === "Paid") return bill.is_paid;
+    if (activeFilter === "Overdue") return !bill.is_paid && status === "Overdue";
+    if (activeFilter === "Upcoming") return !bill.is_paid && status === "Upcoming";
+    return false;
+  });
 
-  /* ---------------- OTHER ACTIONS ---------------- */
-  const handleMarkPaid = async (id) => {
+  /* ---------------- ACTIONS ---------------- */
+  const handleMarkPaid = async (bill) => {
     try {
-      await markBillPaid(id);
-      toast.success("Bill marked as paid");
+      await markBillPaid(bill.id);
+
+      await addTransaction({
+        type: "Expense",
+        amount: Number(bill.amount),
+        category: bill.category || "Uncategorized",
+        description: bill.title,
+        date: new Date().toISOString().split("T")[0],
+      });
+
+      await addRewardPoints(10);
+
+      toast.success("Bill paid successfully + 10 reward points 🎉");
       loadBills();
-    } catch {
+    } catch (error) {
+      console.error(error);
       toast.error("Failed to mark bill as paid");
     }
   };
@@ -134,6 +115,44 @@ export default function Bills() {
       loadBills();
     } catch {
       toast.error("Failed to delete bill");
+    }
+  };
+
+  const handleEdit = (bill) => {
+    setEditingBillId(bill.id);
+    setForm({
+      title: bill.title,
+      amount: bill.amount,
+      due_date: normalizeDate(bill.due_date),
+      category: bill.category,
+      frequency: bill.frequency,
+      reminder: bill.reminder,
+    });
+    setShowModal(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.title || !form.amount || !form.due_date) {
+      toast.warning("Fill all required fields");
+      return;
+    }
+
+    const payload = {
+      ...form,
+      amount: Number(form.amount),
+      due_date: normalizeDate(form.due_date),
+    };
+
+    try {
+      editingBillId
+        ? await updateBill(editingBillId, payload)
+        : await createBill(payload);
+
+      toast.success(editingBillId ? "Bill updated" : "Bill added");
+      closeModal();
+      loadBills();
+    } catch {
+      toast.error("Operation failed");
     }
   };
 
@@ -150,160 +169,166 @@ export default function Bills() {
     });
   };
 
-  /* ---------------- STATUS ---------------- */
-  const getStatus = (bill) => {
-    if (bill.is_paid) return "Paid";
-    const today = new Date();
-    const due = new Date(bill.due_date);
-    return due < today ? "Overdue" : "Upcoming";
-  };
-
-  const statusStyle = (status) => {
-    if (status === "Paid") return "bg-green-100 text-green-700";
-    if (status === "Overdue") return "bg-red-100 text-red-700";
-    return "bg-yellow-100 text-yellow-700";
-  };
-
   if (loading) return <p className="p-6">Loading bills...</p>;
 
-  const overdueCount = bills.filter(b => getStatus(b) === "Overdue").length;
-  const upcomingCount = bills.filter(b => getStatus(b) === "Upcoming").length;
-  const paidCount = bills.filter(b => b.is_paid).length;
+  /* ---------------- TABLE ---------------- */
+  const columns = [
+    { field: "title", headerName: "Bill", flex: 1.6 },
+
+    {
+      field: "amount",
+      headerName: "Amount",
+      flex: 1,
+      renderCell: (p) => <span className="font-medium">₹{p.value}</span>,
+    },
+
+    {
+      field: "due_date",
+      headerName: "Due Date",
+      flex: 1,
+      renderCell: (p) => (
+        <span className="text-sm text-gray-700">
+          {normalizeDate(p.row.due_date)}
+        </span>
+      ),
+    },
+
+    {
+      field: "status",
+      headerName: "Status",
+      flex: 1,
+      align: "center",
+      headerAlign: "center",
+      renderCell: (p) => {
+        const status = getStatus(p.row);
+        return (
+          <Chip
+            label={status}
+            size="small"
+            color={
+              status === "Paid"
+                ? "success"
+                : status === "Overdue"
+                ? "error"
+                : "warning"
+            }
+            variant="outlined"
+          />
+        );
+      },
+    },
+
+    {
+  field: "actions",
+  headerName: "Actions",
+  flex: 2,
+  align: "center",
+  headerAlign: "center",
+  sortable: false,
+  renderCell: (params) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "100%",
+        gap: "10px",
+      }}
+    >
+      {!params.row.is_paid && (
+        <button
+          onClick={() => handleMarkPaid(params.row)}
+          className="bg-green-600 text-white text-xs px-4 py-1.5 rounded-full hover:bg-green-700"
+        >
+          Mark Paid
+        </button>
+      )}
+
+      <Pencil
+        size={18}
+        className="cursor-pointer text-blue-600 hover:text-blue-800"
+        onClick={() => handleEdit(params.row)}
+      />
+
+      <Trash2
+        size={18}
+        className="cursor-pointer text-red-500 hover:text-red-700"
+        onClick={() => handleDelete(params.row.id)}
+      />
+    </div>
+  ),
+}
+  ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* HEADER */}
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold">Bills & Payments</h1>
-          <p className="text-sm text-gray-500">
-            Manage recurring bills and payment reminders
-          </p>
-        </div>
-
+        <h1 className="text-2xl font-bold">Bills & Payments</h1>
         <button
           onClick={() => setShowModal(true)}
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg"
         >
-          <Plus size={18} />
-          Add Bill
+          <Plus size={18} /> Add Bill
         </button>
       </div>
 
       {/* SUMMARY */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <SummaryCard title="Overdue" count={overdueCount} color="red" icon={<AlertCircle />} />
-        <SummaryCard title="Upcoming" count={upcomingCount} color="yellow" icon={<Clock />} />
-        <SummaryCard title="Paid" count={paidCount} color="green" icon={<CheckCircle />} />
+        <SummaryCard
+          title="Overdue"
+          count={bills.filter((b) => getStatus(b) === "Overdue").length}
+          color="red"
+          icon={<AlertCircle />}
+          onClick={() => setActiveFilter("Overdue")}
+        />
+        <SummaryCard
+          title="Upcoming"
+          count={bills.filter((b) => getStatus(b) === "Upcoming").length}
+          color="yellow"
+          icon={<Clock />}
+          onClick={() => setActiveFilter("Upcoming")}
+        />
+        <SummaryCard
+          title="Paid"
+          count={bills.filter((b) => b.is_paid).length}
+          color="green"
+          icon={<CheckCircle />}
+          onClick={() => setActiveFilter("Paid")}
+        />
       </div>
 
-      {/* ACTIVE BILLS */}
-      <div className="bg-white border rounded-xl divide-y">
-        <div className="px-6 py-4 border-b">
-          <h2 className="font-semibold">Active Bills</h2>
+      {/* TABLE */}
+      <div className="bg-white rounded-xl shadow-sm">
+        <div style={{ height: 520 }}>
+          <DataGrid
+            rows={filteredBills}
+            columns={columns}
+            pageSizeOptions={[5, 10]}
+            initialState={{
+              pagination: { paginationModel: { pageSize: 5, page: 0 } },
+            }}
+            disableRowSelectionOnClick
+          />
         </div>
-
-        {bills
-        .filter((bill) => !bill.is_paid)
-        .map((bill) => {
-
-          const status = getStatus(bill);
-
-          return (
-            <div
-              key={bill.id}
-              className="flex flex-col md:flex-row md:items-center justify-between px-6 py-4 gap-4"
-            >
-              <div>
-                <h3 className="font-semibold flex items-center gap-2">
-                  {bill.title}
-                  <span className={`text-xs px-2 py-1 rounded-full ${statusStyle(status)}`}>
-                    {status}
-                  </span>
-                </h3>
-
-                <div className="text-sm text-gray-500 mt-1 space-y-1">
-                  <p>Amount: ₹{bill.amount}</p>
-                  <p>Due Date: {new Date(bill.due_date).toLocaleDateString()}</p>
-                  <p>Category: {bill.category}</p>
-                  <p>Frequency: {bill.frequency}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-  {!bill.is_paid && (
-    <>
-      <button
-        onClick={() => handleMarkPaid(bill.id)}
-        className="bg-green-600 text-white px-3 py-1 rounded text-sm"
-      >
-        Mark Paid
-      </button>
-
-      <Pencil
-        onClick={() => handleEdit(bill)}
-        className="cursor-pointer text-blue-600"
-        size={18}
-      />
-    </>
-  )}
-
-  <Trash2
-    onClick={() => handleDelete(bill.id)}
-    className="cursor-pointer text-red-500"
-  />
-</div>
-
-            </div>
-          );
-        })}
       </div>
 
-      {/* INFO */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-700">
-        Smart Reminders: Email/SMS notifications are sent before due dates for enabled bills.
-      </div>
-
-      {/* ADD / EDIT MODAL */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="font-semibold text-lg">
-                {editingBillId ? "Edit Bill" : "Add New Bill"}
-              </h2>
-              <button onClick={closeModal}>
-                <X />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <Input label="Bill Name *" value={form.title} onChange={v => setForm({ ...form, title: v })} />
-              <Input label="Amount (₹) *" type="number" value={form.amount} onChange={v => setForm({ ...form, amount: v })} />
-              <Input label="Due Date *" type="date" value={form.due_date} onChange={v => setForm({ ...form, due_date: v })} />
-              <Select label="Category" options={categories} value={form.category} onChange={v => setForm({ ...form, category: v })} />
-              <Select label="Frequency" options={frequencies} value={form.frequency} onChange={v => setForm({ ...form, frequency: v })} />
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={closeModal}>Cancel</button>
-              <button
-                onClick={handleSave}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg"
-              >
-                {editingBillId ? "Update Bill" : "Add Bill"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          form={form}
+          setForm={setForm}
+          onSave={handleSave}
+          onClose={closeModal}
+          editing={editingBillId}
+        />
       )}
     </div>
   );
 }
 
-/* ---------------- REUSABLE ---------------- */
+/* ---------------- REUSABLE COMPONENTS ---------------- */
 
-function SummaryCard({ title, count, color, icon }) {
+function SummaryCard({ title, count, color, icon, onClick }) {
   const colors = {
     red: "bg-red-50 border-red-200 text-red-600",
     yellow: "bg-yellow-50 border-yellow-200 text-yellow-600",
@@ -311,13 +336,44 @@ function SummaryCard({ title, count, color, icon }) {
   };
 
   return (
-    <div className={`border rounded-xl p-4 ${colors[color]}`}>
+    <div
+      onClick={onClick}
+      className={`border rounded-xl p-4 cursor-pointer hover:shadow ${colors[color]}`}
+    >
       <div className="flex justify-between items-center">
         <div>
           <p className="text-sm font-medium">{title}</p>
           <p className="text-2xl font-bold">{count}</p>
         </div>
         {icon}
+      </div>
+    </div>
+  );
+}
+
+function Modal({ form, setForm, onSave, onClose, editing }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6">
+        <div className="flex justify-between mb-4">
+          <h2 className="font-semibold">{editing ? "Edit Bill" : "Add Bill"}</h2>
+          <button onClick={onClose}><X /></button>
+        </div>
+
+        <div className="space-y-4">
+          <Input label="Bill Name" value={form.title} onChange={(v) => setForm({ ...form, title: v })} />
+          <Input label="Amount" type="number" value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} />
+          <Input label="Due Date" type="date" value={form.due_date} onChange={(v) => setForm({ ...form, due_date: v })} />
+          <Select label="Category" options={categories} value={form.category} onChange={(v) => setForm({ ...form, category: v })} />
+          <Select label="Frequency" options={frequencies} value={form.frequency} onChange={(v) => setForm({ ...form, frequency: v })} />
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button onClick={onClose}>Cancel</button>
+          <button onClick={onSave} className="bg-blue-600 text-white px-6 py-2 rounded-lg">
+            {editing ? "Update" : "Add"}
+          </button>
+        </div>
       </div>
     </div>
   );

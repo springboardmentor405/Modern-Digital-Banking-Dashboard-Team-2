@@ -38,26 +38,20 @@ export default function ImportCSVModal({ onClose, onSuccess }) {
 
         {/* UPLOAD AREA */}
         {!file && (
-         <input
-  type="file"
-  accept=".csv"
-  onChange={(e) => {
-    const selected = e.target.files?.[0];
-    console.log("CSV FILE:", selected);
-    setFile(selected);
-  }}
-  className="hidden"
-  id="csvInput"
-/>
-
-<label
-  htmlFor="csvInput"
-  className="border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50"
->
-  <Upload className="mb-3 text-gray-400" size={32} />
-  <p className="text-sm">Click to upload CSV</p>
-</label>
-
+          <label className="border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-gray-50">
+            <Upload className="mb-3 text-gray-400" size={32} />
+            <p className="text-sm">Drag and drop your CSV file here</p>
+            <span className="text-xs text-gray-400 my-2">or</span>
+            <span className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm">
+              Browse Files
+            </span>
+            <input
+              type="file"
+              accept=".csv"
+              hidden
+              onChange={(e) => setFile(e.target.files[0])}
+            />
+          </label>
         )}
 
         {/* FILE PREVIEW (THIS WAS MISSING ✅) */}

@@ -30,7 +30,7 @@ class Bill(Base):
 
     frequency = Column(String, default="One-time")  # ✅ ADD THIS
 
-    reminder = Column(Boolean, default=True)
+    reminder = Column(Boolean, default=False)
     is_paid = Column(Boolean, default=False)
 
 # ======================

@@ -1,6 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import timedelta
+from datetime import date
+from app.services.bill_reminder_service import send_single_bill_reminder
+from app.db.models import Transaction
+from datetime import datetime
+from app.services.bill_reminder_service import check_and_send_overdue_reminders
+
 
 
 from app.db.session import get_db
@@ -20,12 +26,25 @@ def get_bills(db: Session = Depends(get_db)):
 
 @router.post("/")
 def create_bill(bill: BillCreate, db: Session = Depends(get_db)):
-    new_bill = Bill(**bill.dict())
+    new_bill = Bill(
+        title=bill.title,
+        amount=bill.amount,
+        due_date=bill.due_date,
+        category=bill.category,
+
+        # backend-controlled fields
+        is_paid=False,
+        reminder=False
+    )
     db.add(new_bill)
     db.commit()
     db.refresh(new_bill)
-    return new_bill
 
+    # ✅ IMMEDIATE CHECK AFTER CREATION
+    if new_bill.due_date <= date.today() and not new_bill.is_paid:
+        send_single_bill_reminder(new_bill)
+
+    return new_bill
 
 @router.patch("/{bill_id}/mark-paid")
 def mark_bill_paid(bill_id: int, db: Session = Depends(get_db)):
@@ -34,34 +53,35 @@ def mark_bill_paid(bill_id: int, db: Session = Depends(get_db)):
     if not bill:
         raise HTTPException(status_code=404, detail="Bill not found")
 
-    if not bill.due_date:
-        raise HTTPException(status_code=400, detail="Bill has no due date")
+    if bill.is_paid:
+        return {"message": "Bill already paid"}
 
-    # 🔁 Recurring logic
-    if bill.frequency == "Monthly":
-        bill.due_date = bill.due_date + timedelta(days=30)
-        bill.is_paid = False
+    # 1️⃣ Mark bill as paid
+    bill.is_paid = True
+    bill.reminder = True
 
-    elif bill.frequency == "Yearly":
-        bill.due_date = bill.due_date + timedelta(days=365)
-        bill.is_paid = False
+    # 2️⃣ Create transaction
+    transaction = Transaction(
+        user_id=1,
+        description=bill.title,
+        amount=bill.amount,
+        type="Expense",     # ✅ MATCHES DB
+        category=bill.category,
+        date=datetime.utcnow()
+    )
+    db.add(transaction)
 
-    else:  # One-time bill
-        bill.is_paid = True
-
-    # 🎁 Rewards logic (THIS PART YOU ASKED ABOUT)
+    # 3️⃣ Rewards
     reward = db.query(Reward).filter(Reward.user_id == 1).first()
     if not reward:
         reward = Reward(user_id=1, points=0)
         db.add(reward)
+    reward.points += 10
 
-    reward.points += 10  # add 10 points per paid bill
-
-    # ✅ Commit ONCE at the end
     db.commit()
     db.refresh(bill)
 
-    return {"message": "Bill marked as paid"}
+    return {"message": "Bill marked as paid successfully"}
 
 
 @router.delete("/{bill_id}")
@@ -72,6 +92,14 @@ def delete_bill(bill_id: int, db: Session = Depends(get_db)):
     db.delete(bill)
     db.commit()
     return {"message": "Bill deleted"}
+
+
+@router.get("/bills")
+def get_bills(db: Session = Depends(get_db)):
+    check_and_send_overdue_reminders(db)
+    return db.query(Bill).all()
+
+
 
 
 # ✅ THIS IS THE UPDATE ROUTE (ADD THIS AT THE END)
@@ -94,3 +122,11 @@ def update_bill(bill_id: int, bill_data: BillUpdate, db: Session = Depends(get_d
 
     return bill
 
+@router.post("/send-overdue-reminders")
+def send_overdue_reminders(db: Session = Depends(get_db)):
+    check_and_send_overdue_reminders(db)
+    return {"message": "Overdue reminder emails sent"}
+
+  # ✅ Commit ONCE at the end
+    db.commit()
+    db.refresh(bill)

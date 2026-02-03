@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { getUser, logout } from "../auth";
+import { Lightbulb } from "lucide-react";
 import {
   Menu,
   X,
@@ -9,19 +10,32 @@ import {
   CreditCard,
   PiggyBank,
   FileText,
-  Gift,
-  BarChart3,
   User,
 } from "lucide-react";
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+
   const navigate = useNavigate();
   const location = useLocation();
+  const profileRef = useRef(null);
 
-  const user = getUser() || {};
-  const displayName = user.name || "User";
-  const email = user.email || "Gmail";
+let user = {};
+try {
+  user = JSON.parse(localStorage.getItem("user")) || {};
+} catch (e) {
+  user = {};
+}
+
+const displayName = user?.name || "U";
+const email = user?.email || "";
+
+  const initials = displayName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase();
 
   const goTo = (path) => {
     navigate(path);
@@ -38,22 +52,49 @@ export default function DashboardLayout() {
     navigate("/login");
   };
 
+  /* Close profile dropdown on outside click */
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (profileRef.current && !profileRef.current.contains(e.target)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () =>
+      document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* HEADER */}
-      <nav className="bg-white border-b px-6 py-4 flex items-center gap-4">
-        <button onClick={() => setSidebarOpen(true)}>
-          <Menu />
-        </button>
+      {/* HEADER */}
+<nav className="bg-white border-b px-6 py-4 flex items-center justify-between">
+  <div className="flex items-center gap-4">
+    <button onClick={() => setSidebarOpen(true)}>
+      <Menu />
+    </button>
 
-        <div>
-          <h1 className="font-semibold">Hello, {displayName} 👋</h1>
-          <p className="text-sm text-gray-500">Manage your finances</p>
-        </div>
-      </nav>
+    <div>
+      <h1 className="font-semibold">Hello, {displayName} 👋</h1>
+      <p className="text-sm text-gray-500">Manage your finances</p>
+    </div>
+  </div>
+
+  {/* PROFILE AVATAR */}
+  <button
+    onClick={() => navigate("/profile")}
+    className="w-10 h-10 rounded-full bg-indigo-600 text-white flex items-center justify-center font-semibold"
+  >
+    {displayName?.charAt(0)?.toUpperCase() || "U"}
+  </button>
+</nav>
 
       {/* SIDEBAR */}
-      <div className={`fixed inset-0 z-40 ${sidebarOpen ? "visible" : "invisible"}`}>
+      <div
+        className={`fixed inset-0 z-40 ${
+          sidebarOpen ? "visible" : "invisible"
+        }`}
+      >
         <div
           className="absolute inset-0 bg-black/30"
           onClick={() => setSidebarOpen(false)}
@@ -109,11 +150,17 @@ export default function DashboardLayout() {
                 Bills
               </button>
 
-              
-
-              
-
-              
+              <button
+                onClick={() => navigate("/insights")}
+                className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg ${
+                  location.pathname === "/insights"
+                    ? "bg-indigo-50 text-indigo-600"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                <Lightbulb size={18} />
+                Insights
+              </button>
             </nav>
 
             {/* FOOTER */}
